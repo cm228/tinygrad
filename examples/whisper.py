@@ -313,7 +313,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
-  json.dump(all_segments[0], open('output.json', 'w'), indent=2)
+  json.dump({'text':transcriptions[0], 'segments': all_segments[0]}, open('output.json', 'w'), indent=2)
+  if use_timestamps: transcriptions = [all_segments[0]]
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
 
 CHUNK = 1600
