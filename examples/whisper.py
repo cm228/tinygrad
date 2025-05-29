@@ -260,17 +260,68 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
       timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:start])
       if timestamp_prob>text_toks_prob: logits[i, :eot] = -np.inf
     return logits
+  
+  def grdy_smpl(ctx, next_logits, sum_logprobs):
+    logprobs = log_softmax(next_logits, axis=-1)
+    next_tokens = np.argmax(next_logits, axis=-1).astype(np.int32).reshape(-1, 1)
+    logprobs = logprobs[np.arange(logprobs.shape[0]), next_tokens[:, 0]].reshape(-1)
+    sum_logprobs += logprobs * (ctx[:, -1] != eot)                             
+    next_tokens[ctx[:, -1] == eot] = eot
+    ctx = np.concatenate((ctx, next_tokens), axis=1)
+    pos = ctx.shape[-1] - 1
+    return next_tokens, ctx, pos, sum_logprobs
+  
+  def beam_smpl(ctx, next_logits, sum_logprobs):
+    bs, vs = model.batch_size, next_logits.shape[-1]
+    logprobs = log_softmax(next_logits)
+    if ctx[:, -1] == start_tokens[-1]: logprobs = logprobs[0, :].flatten()
+    else:
+      finished_mask = (ctx[:, -1] == eot)
+      mask = np.full_like(logprobs, -np.inf)
+      mask[:, eot] = 0  
+      logprobs = np.where(finished_mask[:, None], mask, logprobs)
+      logprobs = (logprobs + sum_logprobs.reshape(-1,1)).flatten()
+
+    top_indices = np.argpartition(logprobs, -bs)[-bs:]
+    top_indices = top_indices[np.argsort(-logprobs[top_indices])]
+
+    # Map flat indices back to (beam, token)
+    beam_indices = top_indices // vs
+    token_indices = top_indices % vs
+
+    sum_logprobs = logprobs[top_indices]
+    ctx = ctx[beam_indices]
+    tokens = token_indices.reshape(-1,1)
+    tokens[ctx[:, -1] == eot] = eot                                               
+    ctx = np.concatenate((ctx, tokens), axis=1)
+    pos = ctx.shape[-1] - 1
+    model.decoder.rearrange_kv_cache(beam_indices.tolist())
+    return tokens, ctx, pos, sum_logprobs
+  
+  sample_fn = grdy_smpl if model.batch_size>1 else beam_smpl
+
+  def rank(ctx_lens, logprobs, length_penalty=None):
+    result = []
+    for logprob, length in zip(logprobs, ctx_lens):
+      if length_penalty is None: penalty = length
+      else: penalty = ((5 + length) / 6) ** length_penalty
+      result.append(logprob / penalty)
+    best_idx = int(np.argmax(result))
+    return best_idx
+  
+  def repeated_eot(ctx): return [np.argmax(seq[::-1] != eot)-1 for seq in ctx]
 
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
-    pos, next_tokens = 0, ctx
+    pos, next_tokens, sum_logprobs = 0, ctx, [0 for _ in range(model.batch_size)]
     for i in range((nsample-len(start_tokens))*2):
       next_logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].numpy()
       next_logits = apply_logit_rules(ctx, next_logits)
-      next_tokens = np.argmax(next_logits, axis=-1).astype(np.int32).reshape(-1, 1)
-      next_tokens[ctx[:, -1] == eot] = eot
-      ctx = np.concatenate((ctx, next_tokens), axis=1)
-      pos = ctx.shape[-1] - 1
+      next_tokens, ctx, pos, sum_logprobs = sample_fn(ctx, next_logits, sum_logprobs)
       if (next_tokens == eot).all(): break
+    if model.batch_size>1:
+      idx = rank([i-c for c in repeated_eot(ctx)], sum_logprobs)
+      model.decoder.rearrange_kv_cache([idx for _ in range(model.batch_size)])
+      ctx = np.tile(ctx[i], (model.batch_size, 1))
     return ctx
   
   def tt2sec(tok): return float(enc.decode([tok])[2:-2])
@@ -332,7 +383,7 @@ def listener(q):
   print("done listening")
 
 if __name__ == "__main__":
-  model, enc = init_whisper("small.en" if getenv("SMALL") else "tiny.en", batch_size=1)
+  model, enc = init_whisper("small.en" if getenv("SMALL") else "tiny.en", batch_size=getenv("BEAM_SIZE", 1))
 
   if len(sys.argv) > 1:
     print(transcribe_file(model, enc, sys.argv[1]))
