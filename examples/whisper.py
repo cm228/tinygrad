@@ -116,6 +116,21 @@ class TextDecoder:
 
   def output_tok(self, x):
     return (self.ln(x) @ self.token_embedding.weight.T).realize()
+  
+  def rearrange_kv_cache(self, beam_indices: List[int]):
+    for block in self.blocks:
+      attn = block.attn
+      if attn.kv_caching != 'self': continue
+
+      for cache_attr in ['cache_k', 'cache_v']:
+        cache = getattr(attn, cache_attr, None)
+        if cache is None: continue
+
+        # Manually gather selected rows
+        selected = [cache[i] for i in beam_indices]
+        selected_tensor = selected[0].stack(*selected[1:], dim=0)  # shape [batch, seq_len, dim]
+        # Assign in-place
+        getattr(attn, cache_attr).assign(selected_tensor.contiguous()).realize()
 
 class Whisper:
   def __init__(self, dims, batch_size=1):
