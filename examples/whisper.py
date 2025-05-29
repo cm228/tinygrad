@@ -288,8 +288,11 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
   
   def beam_smpl(ctx, next_logits, sum_logprobs):
     bs, vs = model.batch_size, next_logits.shape[-1]
+    print(bs, vs)
     logprobs = log_softmax(next_logits)
-    if ctx[:, -1] == start_tokens[-1]: logprobs = logprobs[0, :].flatten()
+    if ctx[:, -1] == start_tokens[-1]:
+      logprobs = logprobs[0, :].flatten()
+      print("using beam 0 for first step")
     else:
       finished_mask = (ctx[:, -1] == eot)
       mask = np.full_like(logprobs, -np.inf)
@@ -311,6 +314,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
     ctx = np.concatenate((ctx, tokens), axis=1)
     pos = ctx.shape[-1] - 1
     model.decoder.rearrange_kv_cache(beam_indices.tolist())
+    print(beam_indices)
     return tokens, ctx, pos, sum_logprobs
   
   sample_fn = grdy_smpl if model.batch_size>1 else beam_smpl
