@@ -336,7 +336,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
     if model.batch_size>1:
       idx = rank([i-c for c in repeated_eot(ctx)], sum_logprobs)
       model.decoder.rearrange_kv_cache([idx for _ in range(model.batch_size)])
-      ctx = np.tile(ctx[i], (model.batch_size, 1))
+      ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
   
   def tt2sec(tok): return float(enc.decode([tok])[2:-2])
