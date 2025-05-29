@@ -327,7 +327,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
   def repeated_eot(ctx): return [np.argmax(seq[::-1] != eot)-1 for seq in ctx]
 
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
-    pos, next_tokens, sum_logprobs = 0, ctx, [0 for _ in range(model.batch_size)]
+    pos, next_tokens, sum_logprobs = 0, ctx, np.zeros((ctx.shape[0], 1))
     for i in range((nsample-len(start_tokens))*2):
       next_logits = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].numpy()
       next_logits = apply_logit_rules(ctx, next_logits)
@@ -335,7 +335,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
       if (next_tokens == eot).all(): break
     if model.batch_size>1:
       print([i-c for c in repeated_eot(ctx)])
-      print(enc.batch_decode(ctx))
+      print(enc.decode_batch(ctx))
       idx = rank([i-c for c in repeated_eot(ctx)], sum_logprobs)
       model.decoder.rearrange_kv_cache([idx for _ in range(model.batch_size)])
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
