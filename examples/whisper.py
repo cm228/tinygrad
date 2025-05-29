@@ -317,7 +317,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
     print(beam_indices)
     return tokens, ctx, pos, sum_logprobs
   
-  sample_fn = grdy_smpl if model.batch_size>1 else beam_smpl
+  sample_fn = grdy_smpl if model.batch_size==1 else beam_smpl
 
   def rank(ctx_lens, logprobs, length_penalty=None):
     result = []
