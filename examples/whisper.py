@@ -290,7 +290,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
     bs, vs = model.batch_size, next_logits.shape[-1]
     print(bs, vs)
     logprobs = log_softmax(next_logits)
-    if ctx[:, -1] == start_tokens[-1]:
+    if (ctx[:, -1] == start_tokens[-1]).all():
       logprobs = logprobs[0, :].flatten()
       print("using beam 0 for first step")
     else:
