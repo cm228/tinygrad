@@ -307,7 +307,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
     token_indices = top_indices % vs
 
     sum_logprobs = logprobs[top_indices]
-    print(sum_logprobs)
     ctx = ctx[beam_indices]
     tokens = token_indices.reshape(-1,1)
     tokens[ctx[:, -1] == eot] = eot                                               
