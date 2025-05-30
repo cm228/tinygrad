@@ -252,13 +252,13 @@ def load_file_waveform(filename):
 def transcribe_file(model, enc, filename):
   return transcribe_waveform(model, enc, [load_file_waveform(filename)])
 
-def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_timestamps=getenv('TIMESTAMPS', 0)):
+def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_timestamps=getenv('TIMESTAMPS', 0), use_beam=(getenv('BEAM_SIZE',0)>1)):
   """
   Expects an array of shape (N,S) where N is the number waveforms to transcribe in parallel and S is number of 16000Hz samples
   Returns the transcribed text if a single waveform is provided, or an array of transcriptions if multiple are provided
   """
 
-  log_spec = prep_audio(waveforms, 1, truncate)
+  log_spec = prep_audio(waveforms, (1 if use_beam else model.batch_size), truncate)
   nsample = model.decoder.max_tokens_to_sample
 
   def apply_logit_rules(ctx, logits):
@@ -316,7 +316,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
     model.decoder.rearrange_kv_cache(beam_indices.tolist())
     return tokens, ctx, pos, sum_logprobs
   
-  sample_fn = grdy_smpl if model.batch_size==1 else beam_smpl
+  sample_fn = beam_smpl if use_beam else grdy_smpl
 
   def rank(ctx_lens, logprobs, length_penalty=None):
     result = []
