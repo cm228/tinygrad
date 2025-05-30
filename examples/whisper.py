@@ -336,11 +336,9 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False, use_time
       next_logits = apply_logit_rules(ctx, next_logits)
       next_tokens, ctx, pos, sum_logprobs = sample_fn(ctx, next_logits, sum_logprobs)
       if (next_tokens == eot).all(): break
-    if model.batch_size>1:
-      print([i-c for c in repeated_eot(ctx)])
-      print(enc.decode_batch(ctx))
+    if use_beam:
       idx = rank([i-c for c in repeated_eot(ctx)], sum_logprobs)
-      model.decoder.rearrange_kv_cache([idx for _ in range(model.batch_size)])
+      model.decoder.rearrange_kv_cache([idx]*model.batch_size)
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
   
