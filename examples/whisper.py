@@ -9,6 +9,7 @@ from tinygrad.helpers import getenv, DEBUG, fetch
 
 import numpy as np
 import librosa
+from scipy.special import logsumexp, log_softmax
 
 class MultiHeadAttention:
   def __init__(self, n_state, n_head, kv_caching: Literal['cross', 'self']=None, max_self_attn_cache_len=None):
@@ -236,7 +237,7 @@ def load_file_waveform(filename):
 def transcribe_file(model, enc, filename):
   return transcribe_waveform(model, enc, [load_file_waveform(filename)])
 
-def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
+def transcribe_waveform(model: Whisper, enc, waveforms, use_timestamps=False, truncate=False,):
   """
   Expects an array of shape (N,S) where N is the number waveforms to transcribe in parallel and S is number of 16000Hz samples
   Returns the transcribed text if a single waveform is provided, or an array of transcriptions if multiple are provided
@@ -245,10 +246,25 @@ def transcribe_waveform(model: Whisper, enc, waveforms, truncate=False):
   log_spec = prep_audio(waveforms, model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
+  def apply_logit_rules(ctx, logits):
+    supr = [enc._special_tokens[c] for c in ["<|startoftranscript|>", "<|translate|>", "<|transcribe|>","<|startoflm|>","<|startofprev|>","<|nospeech|>","<|notimestamps|>",]]
+    logits[:, supr] = -np.inf
+    start = enc._special_tokens['<|0.00|>']
+    for i, row in enumerate(ctx):
+      last, penult = row[-1], (row[-2] if row[-1]!=start_tokens[-1] else None)
+      if last == start_tokens[-1]: logits[i, (list(range(start)) if use_timestamps else enc.encode(' ') + [eot])] = -np.inf
+      elif last > start:
+        if penult is not None and (penult==start_tokens[-1] or penult>=start): logits[i, start:] = -np.inf
+        else: logits[i, np.r_[:eot, start:last]] = -np.inf
+      logprobs = log_softmax(logits[i])
+      timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:start])
+      if timestamp_prob>text_toks_prob: logits[i, :eot] = -np.inf
+    return logits
+
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens = 0, ctx
     for i in range((nsample-len(start_tokens))*2):
-      next_tokens = model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].argmax(axis=-1).numpy().astype(np.int32).reshape(-1, 1)
+      next_tokens = apply_logit_rules(ctx, model.decoder(Tensor(next_tokens), pos, encoded_audio))[:, -1].argmax(axis=-1).numpy().astype(np.int32).reshape(-1, 1)
       next_tokens[ctx[:, -1] == eot] = eot
       ctx = np.concatenate((ctx, next_tokens), axis=1)
       pos = ctx.shape[-1] - 1
