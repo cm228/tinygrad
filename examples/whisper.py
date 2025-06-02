@@ -310,7 +310,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     best_idx = int(np.argmax(result))
     return best_idx
   
-  def repeated_eot(ctx): return [np.argmax(seq[::-1] != eot)-1 for seq in ctx]
+  def repeated_eot(ctx, i): return [i-np.argmax(seq[::-1] != eot)-1 for seq in ctx]
  
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
@@ -320,13 +320,14 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
     if use_beam:
-      idx = rank([i-c for c in repeated_eot(ctx)], sum_logprobs)
+      idx = rank(repeated_eot(ctx, i), sum_logprobs)
       model.decoder.rearrange_kv_cache([idx]*model.batch_size)
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
 
   def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
   def tt2sec(tok): return float(enc.decode([tok])[2:-2])
+  
   def seek_fn(ctx):
     last_timestamp = ctx[0][-(len(start_tokens)+1)]
     if last_timestamp>enc._special_tokens["<|notimestamps|>"]: return int(tt2sec(last_timestamp) / 30 * FRAMES_PER_SEGMENT)
@@ -334,10 +335,18 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
   def get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT):
     seg = log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]
-    if seg.shape[2] < FRAMES_PER_SEGMENT:
-        pad = FRAMES_PER_SEGMENT - seg.shape[2]
-        seg = np.pad(seg, ((0, 0), (0, 0), (0, pad)), mode='constant')
+    if seg.shape[2] < FRAMES_PER_SEGMENT: seg = np.pad(seg, ((0, 0), (0, 0), (0, FRAMES_PER_SEGMENT - seg.shape[2])), mode='constant')
     return Tensor(seg)
+  
+  def process_ctx(toks, seek):
+    i, r, c = np.where(toks == start_tokens[-1])[0][0] + 1, [], []
+    for t in toks[i:]:
+        if t > enc._special_tokens['<|notimestamps|>'] and len(c) > 1:
+            r.append({'text': enc.decode(c[1:]).strip(), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(t)})
+            c = []
+        else: c.append(t)
+    if not r: r.append({'text': enc.decode(c[len(start_tokens):]), 'start': seek, 'end': seek + 30})
+    return r
   
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
   if model.is_multilingual:
@@ -351,6 +360,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
   ctx = np.tile(start_tokens, (model.batch_size,1))
   transcriptions = [[] for _ in waveforms]
+  segments = [[] for _ in waveforms]
 
   curr_frame = 0
   while curr_frame < log_spec.shape[-1]:
@@ -358,13 +368,16 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
     if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
     else: ctx = [inferloop((np.array([c]*model.batch_size)), encoded_audio)[i] for i,c in enumerate(ctx)]
-
-    for i, (res, arr) in enumerate(zip(transcriptions, ctx)):
-      if curr_frame*HOP_LENGTH <= len(waveforms[i]):res.extend(arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None])
+    
+    for i, (res, segs, arr) in enumerate(zip(transcriptions, segments,ctx)):
+      if curr_frame*HOP_LENGTH <= len(waveforms[i]):
+        res.extend(arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None])
+        segs.extend(process_ctx(arr, round(curr_frame * HOP_LENGTH / RATE / 0.02) * 0.02))
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
     curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else seek_fn(ctx)
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
+  print(segments[0])
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
 
 CHUNK = 1600
