@@ -344,7 +344,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       r.append({'text': enc.decode(c[1:]), 'start': seek, 'end': seek + 30})
       c = []
     if len(c)>0: 
-      r.append({'text': enc.decode(c[1:]), 'start': seek + tt2sec[c[0]], 'end': seek + tt2sec[c[0]] +30})
+      r.append({'text': enc.decode(c[1:]), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(c[0]) +30})
     return r
   
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
