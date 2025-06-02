@@ -324,7 +324,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   
   def seek_fn(ctx):
     last_timestamp = ctx[0][-(len(start_tokens)+1)]
-    print(f"{enc.decode([last_timestamp])}")
     if last_timestamp>enc._special_tokens["<|notimestamps|>"]: return int(tt2sec(last_timestamp) / 30.0 * FRAMES_PER_SEGMENT)
     else: return FRAMES_PER_SEGMENT
 
@@ -363,7 +362,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
   curr_frame = 0
   while curr_frame < log_spec.shape[-1]:
-    print(curr_frame)
     encoded_audio = model.encoder.encode(get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT))
 
     if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
@@ -377,7 +375,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else seek_fn(ctx)
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
-  print(transcriptions[0])
 
   if use_timestamps: transcriptions = segments
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
