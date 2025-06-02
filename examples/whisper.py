@@ -332,6 +332,14 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     last_timestamp = ctx[0][-(len(start_tokens)+1)]
     if last_timestamp>enc._special_tokens["<|notimestamps|>"]: return int(tt2sec(last_timestamp) / 30 * FRAMES_PER_SEGMENT)
     else: return FRAMES_PER_SEGMENT
+
+  def get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT):
+    seg = log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]
+    if seg.shape[2] < FRAMES_PER_SEGMENT:
+        pad = FRAMES_PER_SEGMENT - seg.shape[2]
+        seg = np.pad(seg, ((0, 0), (0, 0), (0, pad)), mode='constant')
+    return Tensor(seg)
+  
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
   if model.is_multilingual:
     # TODO detect language
@@ -347,7 +355,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
   curr_frame = 0
   while curr_frame < log_spec.shape[-1]:
-    encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
+    encoded_audio = model.encoder.encode(get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT))
 
     if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
     else: ctx = [inferloop((np.array([c]*model.batch_size)), encoded_audio)[i] for i,c in enumerate(ctx)]
