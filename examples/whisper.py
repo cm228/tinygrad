@@ -374,6 +374,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
   if use_timestamps: transcriptions = segments
+  print(transcriptions[0])
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
 
 CHUNK = 1600
