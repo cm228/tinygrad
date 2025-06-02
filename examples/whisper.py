@@ -276,7 +276,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
     if use_beam:
       bs, vs = model.batch_size, next_logits.shape[-1]
-
       if ctx[0, -1] == start_tokens[-1]:
         logprobs = logprobs[0, :].flatten()
       else:
@@ -285,37 +284,44 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
         mask[:, eot] = 0
         logprobs = np.where(finished_mask[:, None], mask, logprobs)
         logprobs = (logprobs + sum_logprobs.reshape(-1, 1)).flatten()
-
       top_indices = np.argpartition(logprobs, -bs)[-bs:]
       top_indices = top_indices[np.argsort(-logprobs[top_indices])]
-
       beam_indices = top_indices // vs
       token_indices = top_indices % vs
-
       sum_logprobs = logprobs[top_indices]
       ctx = ctx[beam_indices]
       tokens = token_indices.reshape(-1, 1)
-
       model.decoder.rearrange_kv_cache(beam_indices.tolist())
-
     else:
-        tokens = np.argmax(next_logits, axis=-1).astype(np.int32).reshape(-1, 1)
-        token_logprobs = logprobs[np.arange(logprobs.shape[0]), tokens[:, 0]].reshape(-1)
-        sum_logprobs += token_logprobs * (ctx[:, -1] != eot)
-
+      tokens = np.argmax(next_logits, axis=-1).astype(np.int32).reshape(-1, 1)
+      token_logprobs = logprobs[np.arange(logprobs.shape[0]), tokens[:, 0]].reshape(-1)
+      sum_logprobs += token_logprobs * (ctx[:, -1] != eot)
     tokens[ctx[:, -1] == eot] = eot
     ctx = np.concatenate((ctx, tokens), axis=1)
     pos = ctx.shape[-1] - 1
-
     return tokens, ctx, pos, sum_logprobs
+  
+  def rank(ctx_lens, logprobs, length_penalty=None):
+    result = []
+    for logprob, length in zip(logprobs, ctx_lens):
+      if length_penalty is None: penalty = length
+      else: penalty = ((5 + length) / 6) ** length_penalty
+      result.append(logprob / penalty)
+    best_idx = int(np.argmax(result))
+    return best_idx
+  
+  def repeated_eot(ctx): return [np.argmax(seq[::-1] != eot)-1 for seq in ctx]
  
-
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
     for i in range(nsample-len(start_tokens)):
       next_logits = apply_logit_rules(ctx, model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].numpy())
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
+    if use_beam:
+      idx = rank([i-c for c in repeated_eot(ctx)], sum_logprobs)
+      model.decoder.rearrange_kv_cache([idx]*model.batch_size)
+      ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
 
   def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
