@@ -364,6 +364,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
   curr_frame = 0
   while curr_frame < log_spec.shape[-1]:
+    print(curr_frame)
     encoded_audio = model.encoder.encode(get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT))
 
     if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
