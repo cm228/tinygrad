@@ -315,7 +315,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
     for i in range(nsample-len(start_tokens)):
-      next_logits = apply_logit_rules(ctx, model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1].numpy())
+      logits = model.decoder(Tensor(next_tokens), pos, encoded_audio).numpy()
+      next_logits = apply_logit_rules(ctx, logits[:,-1])
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
     if use_beam:
@@ -339,7 +340,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   ctx = np.tile(start_tokens, (model.batch_size,1))
   transcriptions = [[] for _ in waveforms]
 
-  for curr_frame in range(0, log_spec.shape[-1], FRAMES_PER_SEGMENT):
+  curr_frame = 0
+  while curr_frame < log_spec.shape[-1]:
     encoded_audio = model.encoder.encode(Tensor(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]))
 
     if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
@@ -348,6 +350,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     for i, (res, arr) in enumerate(zip(transcriptions, ctx)):
       if curr_frame*HOP_LENGTH <= len(waveforms[i]):res.extend(arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None])
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
+    curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else FRAMES_PER_SEGMENT
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
