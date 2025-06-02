@@ -321,7 +321,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       if (next_tokens == eot).all(): break
     if use_beam:
       idx = rank([i-c for c in repeated_eot(ctx)], sum_logprobs)
-      print(enc.decode_batch(ctx))
       model.decoder.rearrange_kv_cache([idx]*model.batch_size)
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
@@ -364,7 +363,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       if curr_frame*HOP_LENGTH <= len(waveforms[i]):res.extend(arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None])
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
     curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else seek_fn(ctx)
-    print(curr_frame)
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
