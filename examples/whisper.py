@@ -351,7 +351,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     for i, (res, arr) in enumerate(zip(transcriptions, ctx)):
       if curr_frame*HOP_LENGTH <= len(waveforms[i]):res.extend(arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None])
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
-    curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else int(tt2sec(ctx[0, -1]) / 30 * FRAMES_PER_SEGMENT)
+    curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else int(tt2sec(ctx[0][-(len(start_tokens)+1)]) / 30 * FRAMES_PER_SEGMENT)
     print(curr_frame)
 
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
