@@ -324,7 +324,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   
   def seek_fn(ctx):
     last_timestamp = ctx[0][-(len(start_tokens)+1)]
-    print(f"{last_timestamp:=}")
+    print(f"{enc.decode(last_timestamp):=}")
     if last_timestamp>enc._special_tokens["<|notimestamps|>"]: return int(tt2sec(last_timestamp) / 30.0 * FRAMES_PER_SEGMENT)
     else: return FRAMES_PER_SEGMENT
 
