@@ -332,7 +332,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     if seg.shape[2] < FRAMES_PER_SEGMENT: seg = np.pad(seg, ((0, 0), (0, 0), (0, FRAMES_PER_SEGMENT - seg.shape[2])), mode='constant')
     return Tensor(seg)
   
-  def process_ctx(toks, seek):
+  def process_ctx(toks, seek, end):
     i, r, c = np.where(toks == start_tokens[-1])[0][0] + 1, [], []
     for t in toks[i:]:
         if t > enc._special_tokens['<|notimestamps|>'] and len(c) > 1:
@@ -343,7 +343,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       r.append({'text': enc.decode(c[1:]), 'start': seek, 'end': seek + 30})
       c = []
     if len(c)>1 and len(enc.decode(gettexttoks(c[1:])))>0:
-      r.append({'text': enc.decode(gettexttoks(c[1:])), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(c[0])+30})
+      r.append({'text': enc.decode(gettexttoks(c[1:])), 'start': seek + tt2sec(c[0]), 'end': min(end, seek + tt2sec(c[0])+30)})
     return r
   
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
@@ -370,7 +370,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     for i, (res, segs, arr) in enumerate(zip(transcriptions, segments,ctx)):
       if curr_frame*HOP_LENGTH <= len(waveforms[i]):
         res.extend(arr[np.where(arr == start_tokens[-1])[0][0]+1:eoti[0] if len (eoti:=np.where(arr == eot)[0]) else None])
-        segs.extend(process_ctx(arr, round(curr_frame * HOP_LENGTH / RATE / 0.02) * 0.02))
+        segs.extend(process_ctx(arr, round(curr_frame * HOP_LENGTH / RATE / 0.02) * 0.02, len(waveforms[i])/RATE))
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
     curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else seek_fn(ctx)
 
