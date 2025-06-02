@@ -273,29 +273,23 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   
   def sample(ctx, next_logits, sum_logprobs, use_beam):
     logprobs = log_softmax(next_logits, axis=-1)
-
     if use_beam:
       bs, vs = model.batch_size, next_logits.shape[-1]
       if ctx[0, -1] == start_tokens[-1]:
         logprobs = logprobs[0, :].flatten()
       else:
-        finished_mask = (ctx[:, -1] == eot)
         mask = np.full_like(logprobs, -np.inf)
         mask[:, eot] = 0
-        logprobs = np.where(finished_mask[:, None], mask, logprobs)
-        logprobs = (logprobs + sum_logprobs.reshape(-1, 1)).flatten()
-      top_indices = np.argpartition(logprobs, -bs)[-bs:]
-      top_indices = top_indices[np.argsort(-logprobs[top_indices])]
-      beam_indices = top_indices // vs
-      token_indices = top_indices % vs
-      sum_logprobs = logprobs[top_indices]
-      ctx = ctx[beam_indices]
-      tokens = token_indices.reshape(-1, 1)
-      model.decoder.rearrange_kv_cache(beam_indices.tolist())
+        logprobs = (np.where((ctx[:, -1] == eot)[:, None], mask, logprobs) + sum_logprobs.reshape(-1, 1)).flatten()
+      top_idxs = np.argpartition(logprobs, -bs)[-bs:]
+      top_idxs = top_idxs[np.argsort(-logprobs[top_idxs])]
+      beam_idxs = top_idxs // vs
+      tokens = (top_idxs % vs).reshape(-1, 1)
+      sum_logprobs, ctx = logprobs[top_idxs], ctx[beam_idxs]
+      model.decoder.rearrange_kv_cache(beam_idxs.tolist())
     else:
       tokens = np.argmax(next_logits, axis=-1).astype(np.int32).reshape(-1, 1)
-      token_logprobs = logprobs[np.arange(logprobs.shape[0]), tokens[:, 0]].reshape(-1)
-      sum_logprobs += token_logprobs * (ctx[:, -1] != eot)
+      sum_logprobs += logprobs[np.arange(logprobs.shape[0]), tokens[:, 0]].reshape(-1) * (ctx[:, -1] != eot)
     tokens[ctx[:, -1] == eot] = eot
     ctx = np.concatenate((ctx, tokens), axis=1)
     pos = ctx.shape[-1] - 1
@@ -330,7 +324,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   
   def seek_fn(ctx):
     last_timestamp = ctx[0][-(len(start_tokens)+1)]
-    if last_timestamp>enc._special_tokens["<|notimestamps|>"]: return int(tt2sec(last_timestamp) / 30 * FRAMES_PER_SEGMENT)
+    print(f"{last_timestamp:=}")
+    if last_timestamp>enc._special_tokens["<|notimestamps|>"]: return int(tt2sec(last_timestamp) / 30.0 * FRAMES_PER_SEGMENT)
     else: return FRAMES_PER_SEGMENT
 
   def get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT):
@@ -345,7 +340,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
             r.append({'text': enc.decode(c[1:]).strip(), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(t)})
             c = []
         else: c.append(t)
-    if not r: r.append({'text': enc.decode(c[len(start_tokens):]), 'start': seek, 'end': seek + 30})
+    if not r: r.append({'text': enc.decode(c[1:]), 'start': seek, 'end': seek + 30})
     return r
   
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
