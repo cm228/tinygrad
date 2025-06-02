@@ -116,6 +116,16 @@ class TextDecoder:
 
   def output_tok(self, x):
     return (self.ln(x) @ self.token_embedding.weight.T).realize()
+  
+  def rearrange_kv_cache(self, beam_indices: List[int]):
+    for block in self.blocks:
+      if block.attn.kv_caching != 'self': continue
+      for cache_attr in ['cache_k', 'cache_v']:
+        cache = getattr(block.attn, cache_attr, None)
+        if cache is None: continue
+        selected = [cache[i] for i in beam_indices]
+        selected_tensor = selected[0].stack(*selected[1:], dim=0)
+        getattr(block.attn, cache_attr).assign(selected_tensor.contiguous()).realize()
 
 class Whisper:
   def __init__(self, dims, batch_size=1):
@@ -237,13 +247,13 @@ def load_file_waveform(filename):
 def transcribe_file(model, enc, filename):
   return transcribe_waveform(model, enc, [load_file_waveform(filename)])
 
-def transcribe_waveform(model: Whisper, enc, waveforms, use_timestamps=False, truncate=False,):
+def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_timestamps=False, truncate=False,):
   """
   Expects an array of shape (N,S) where N is the number waveforms to transcribe in parallel and S is number of 16000Hz samples
   Returns the transcribed text if a single waveform is provided, or an array of transcriptions if multiple are provided
   """
 
-  log_spec = prep_audio(waveforms, model.batch_size, truncate)
+  log_spec = prep_audio(waveforms, 1 if use_beam else model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
   def apply_logit_rules(ctx, logits):
@@ -260,14 +270,51 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_timestamps=False, tr
       timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:start])
       if timestamp_prob>text_toks_prob: logits[i, :eot] = -np.inf
     return logits
+  
+  def sample(ctx, next_logits, sum_logprobs, use_beam):
+    logprobs = log_softmax(next_logits, axis=-1)
+
+    if use_beam:
+      bs, vs = model.batch_size, next_logits.shape[-1]
+
+      if ctx[0, -1] == start_tokens[-1]:
+        logprobs = logprobs[0, :].flatten()
+      else:
+        finished_mask = (ctx[:, -1] == eot)
+        mask = np.full_like(logprobs, -np.inf)
+        mask[:, eot] = 0
+        logprobs = np.where(finished_mask[:, None], mask, logprobs)
+        logprobs = (logprobs + sum_logprobs.reshape(-1, 1)).flatten()
+
+      top_indices = np.argpartition(logprobs, -bs)[-bs:]
+      top_indices = top_indices[np.argsort(-logprobs[top_indices])]
+
+      beam_indices = top_indices // vs
+      token_indices = top_indices % vs
+
+      sum_logprobs = logprobs[top_indices]
+      ctx = ctx[beam_indices]
+      tokens = token_indices.reshape(-1, 1)
+
+      model.decoder.rearrange_kv_cache(beam_indices.tolist())
+
+    else:
+        tokens = np.argmax(next_logits, axis=-1).astype(np.int32).reshape(-1, 1)
+        token_logprobs = logprobs[np.arange(logprobs.shape[0]), tokens[:, 0]].reshape(-1)
+        sum_logprobs += token_logprobs * (ctx[:, -1] != eot)
+
+    tokens[ctx[:, -1] == eot] = eot
+    ctx = np.concatenate((ctx, tokens), axis=1)
+    pos = ctx.shape[-1] - 1
+
+    return tokens, ctx, pos, sum_logprobs
+ 
 
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
-    pos, next_tokens = 0, ctx
+    pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
     for i in range((nsample-len(start_tokens))*2):
-      next_tokens = apply_logit_rules(ctx, model.decoder(Tensor(next_tokens), pos, encoded_audio))[:, -1].argmax(axis=-1).numpy().astype(np.int32).reshape(-1, 1)
-      next_tokens[ctx[:, -1] == eot] = eot
-      ctx = np.concatenate((ctx, next_tokens), axis=1)
-      pos = ctx.shape[-1] - 1
+      next_logits = apply_logit_rules(ctx, model.decoder(Tensor(next_tokens), pos, encoded_audio)[:, -1])
+      next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
     return ctx
 
@@ -278,7 +325,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_timestamps=False, tr
     language_token = enc._special_tokens["<|startoftranscript|>"] + 1 + tuple(LANGUAGES.keys()).index("en")
     start_tokens.append(language_token)
     start_tokens.append(enc._special_tokens["<|transcribe|>"])
-  start_tokens.append(enc._special_tokens["<|notimestamps|>"])
+  if not use_timestamps: start_tokens.append(enc._special_tokens["<|notimestamps|>"])
 
   eot = enc._special_tokens["<|endoftext|>"]
 
@@ -313,10 +360,11 @@ def listener(q):
   print("done listening")
 
 if __name__ == "__main__":
-  model, enc = init_whisper("small.en" if getenv("SMALL") else "tiny.en", batch_size=1)
+  beam_size = getenv('BEAM_SIZE', 1)
+  model, enc = init_whisper("small.en" if getenv("SMALL") else "tiny.en", batch_size=beam_size)
 
   if len(sys.argv) > 1:
-    print(transcribe_file(model, enc, sys.argv[1]))
+    print(transcribe_file(model, enc, sys.argv[1], use_beam=beam_size>1))
   else:
     # online
     q = multiprocessing.Queue()
