@@ -1,6 +1,6 @@
 # thanks to https://github.com/openai/whisper for a good chunk of MIT licensed code
 
-import sys, base64, multiprocessing, itertools, collections
+import sys, base64, multiprocessing, itertools, collections, json
 from typing import Optional, Union, Literal, List
 
 from tinygrad import Tensor, TinyJit, Variable, nn
@@ -374,9 +374,11 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     ctx = [[enc._special_tokens['<|startofprev|>']]+gettexttoks(cs)+start_tokens for cs in ctx]
     curr_frame += FRAMES_PER_SEGMENT if not use_timestamps else seek_fn(ctx)
 
+  if use_timestamps: [[tok for tok in line if tok<eot] for line in transcriptions]
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
 
-  if use_timestamps: transcriptions = segments
+  if use_timestamps: 
+    json.dump({'text': transcriptions[0], 'segments': segments[0]}, open('tinygrad_output.json', 'w'))
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
 
 CHUNK = 1600
