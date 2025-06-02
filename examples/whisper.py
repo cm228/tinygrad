@@ -342,7 +342,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     if not r: 
       r.append({'text': enc.decode(c[1:]), 'start': seek, 'end': seek + 30})
       c = []
-    if len(c)>1 and enc.decode(gettexttoks(c[1:]))>0:
+    if len(c)>1 and len(enc.decode(gettexttoks(c[1:])))>0:
       r.append({'text': enc.decode(gettexttoks(c[1:])), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(c[0])+30})
     return r
   
