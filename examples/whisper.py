@@ -364,7 +364,7 @@ if __name__ == "__main__":
   model, enc = init_whisper("small.en" if getenv("SMALL") else "tiny.en", batch_size=beam_size)
 
   if len(sys.argv) > 1:
-    print(transcribe_file(model, enc, sys.argv[1], use_beam=beam_size>1))
+    print(transcribe_file(model, enc, sys.argv[1], use_beam=beam_size>1, use_timestamps=bool(getenv('TIMESTAMPS', 0))))
   else:
     # online
     q = multiprocessing.Queue()
