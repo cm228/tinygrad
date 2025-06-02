@@ -244,8 +244,8 @@ def load_file_waveform(filename):
   waveform, _ = librosa.load(filename, sr=RATE)
   return waveform
 
-def transcribe_file(model, enc, filename):
-  return transcribe_waveform(model, enc, [load_file_waveform(filename)])
+def transcribe_file(model, enc, filename, **kwargs):
+  return transcribe_waveform(model, enc, [load_file_waveform(filename)], **kwargs)
 
 def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_timestamps=False, truncate=False,):
   """
