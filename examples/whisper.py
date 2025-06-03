@@ -9,7 +9,7 @@ from tinygrad.helpers import getenv, DEBUG, fetch
 
 import numpy as np
 import librosa
-from scipy.special import logsumexp, log_softmax
+from scipy.special import logsumexp, log_softmax, softmax
 
 class MultiHeadAttention:
   def __init__(self, n_state, n_head, kv_caching: Literal['cross', 'self']=None, max_self_attn_cache_len=None):
@@ -267,10 +267,10 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       if last == start_tokens[-1]: logits[i, (list(range(start)) if use_timestamps else enc.encode(' ') + [eot])] = -np.inf
       elif last > start:
         if penult is not None and (penult==start_tokens[-1] or penult>=start): logits[i, start:] = -np.inf
-        else: logits[i, np.r_[:eot, start:last+1]] = -np.inf # np.r_[:eot, start:last]
+        else: logits[i, np.r_[:eot, start:last]] = -np.inf # np.r_[:eot, start:last]
       logprobs = log_softmax(logits[i])
-      timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:start])
-      if timestamp_prob>text_toks_prob: logits[i, :eot] = -np.inf
+      timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:eot+1])
+      if timestamp_prob>text_toks_prob: logits[i, :start] = -np.inf
     return logits
   
   def sample(ctx, next_logits, sum_logprobs, use_beam):
@@ -308,9 +308,12 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   def get_ctx_lens(ctx, i): return [i-np.argmax(seq[::-1] != eot) for seq in ctx]
  
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
-    pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
+    pos, next_tokens, sum_logprobs, no_speech_probs = 0, ctx, [0]*ctx.shape[0], np.zeros(ctx.shape[0])
     for i in range(nsample-len(start_tokens)):
       logits = model.decoder(Tensor(next_tokens), pos, encoded_audio).numpy()
+      if pos==0: 
+        no_speech_probs = softmax(logits[:, -len(start_tokens)], axis=-1)
+        print(no_speech_probs)
       next_logits = apply_logit_rules(ctx, logits[:,-1])
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
