@@ -144,6 +144,12 @@ HOP_LENGTH = 160
 N_MELS = 80
 FRAMES_PER_SEGMENT = SAMPLES_PER_SEGMENT // HOP_LENGTH # 3000
 
+def pad_or_trim(arr, target_len):
+  curr_len = len(arr)
+  if curr_len == target_len: return arr
+  elif curr_len < target_len: return np.pad(arr, (0, target_len - curr_len), 'constant')
+  else: return arr[:target_len]
+
 def prep_audio(waveforms: List[np.ndarray], batch_size: int, truncate=False) -> np.ndarray:
   """
   :param waveforms: A list of possibly variable length 16000Hz audio samples
@@ -152,14 +158,6 @@ def prep_audio(waveforms: List[np.ndarray], batch_size: int, truncate=False) -> 
   :param truncate: If true, truncates (or pads) audio to exactly 30s for a single encoder pass
   :return: mel spectrogram of the given waveforms
   """
-  def pad_or_trim(arr, target_len):
-    curr_len = len(arr)
-    if curr_len == target_len:
-      return arr
-    elif curr_len < target_len:
-      return np.pad(arr, (0, target_len - curr_len), 'constant')
-    else:
-      return arr[:target_len]
 
   max_len = SAMPLES_PER_SEGMENT if truncate else max(len(wav) for wav in waveforms)
   if (r := max_len % SAMPLES_PER_SEGMENT) > 0: max_len += SAMPLES_PER_SEGMENT - r
@@ -305,7 +303,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     best_idx = int(np.argmax(result))
     return best_idx
   
-  def get_ctx_lens(ctx, i): return [i-np.argmax(seq[::-1] != eot)-1 for seq in ctx]
+  def get_ctx_lens(ctx, i): return [i-np.argmax(seq[::-1] != eot)+1 for seq in ctx]
  
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
@@ -333,24 +331,18 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     last_timestamp = ctx[0][-(len(start_tokens)+1)]
     if last_timestamp>enc._special_tokens["<|notimestamps|>"]: return int(tt2sec(last_timestamp) / 30.0 * FRAMES_PER_SEGMENT)
     else: return FRAMES_PER_SEGMENT
-
-  def get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT):
-    seg = log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT]
-    if seg.shape[2] < FRAMES_PER_SEGMENT: seg = np.pad(seg, ((0, 0), (0, 0), (0, FRAMES_PER_SEGMENT - seg.shape[2])), mode='constant')
-    return Tensor(seg)
   
   def process_ctx(toks, seek, end):
     i, r, c = np.where(toks == start_tokens[-1])[0][0] + 1, [], []
     for t in toks[i:]:
         if t > enc._special_tokens['<|notimestamps|>'] and len(c) > 1:
-            r.append({'text': enc.decode(c[1:]).strip(), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(t)})
+            r.append({'text': enc.decode(c[1:]).rstrip(), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(t)})
             c = []
         else: c.append(t)
-    if len(r)==0: 
-      r.append({'text': enc.decode(c[1:]), 'start': seek, 'end': min(end, seek + 30)})
-      c = []
-    elif len(c)>1 and len(enc.decode(gettexttoks(c[1:])))>0:
-      r.append({'text': enc.decode(gettexttoks(c[1:])), 'start': seek + tt2sec(c[0]), 'end': min(end, seek + tt2sec(c[0])+30)})
+    if len(c)>1:
+      text = enc.decode(gettexttoks(c[1:])).rstrip()
+      if len(r)==0: r.append({'text': text, 'start': seek, 'end': min(end, seek+30)})
+      elif len(text)>0: r.append({'text': text, 'start': seek + tt2sec(c[0]), 'end': min(end, seek+tt2sec(c[0])+30)})
     return r
   
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
@@ -369,7 +361,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
 
   curr_frame, max_steps = 0, max(map(len, waveforms)) - 1.0*RATE
   while curr_frame*HOP_LENGTH <= max_steps:
-    encoded_audio = model.encoder.encode(get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT))
+    encoded_audio = model.encoder.encode(Tensor(pad_or_trim(log_spec[:, :, curr_frame:curr_frame + FRAMES_PER_SEGMENT], FRAMES_PER_SEGMENT)))
 
     if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
     else: ctx = [inferloop((np.array([c]*model.batch_size)), encoded_audio)[i] for i,c in enumerate(ctx)]
@@ -384,8 +376,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   if use_timestamps: transcriptions = [[tok for tok in line if tok<eot] for line in transcriptions]
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
 
-  if use_timestamps: 
-    json.dump({'text': transcriptions[0], 'segments': segments[0]}, open('tinygrad_output.json', 'w'))
+  if use_timestamps: json.dump({'text': transcriptions[0], 'segments': segments[0]}, open('tinygrad_output.json', 'w'))
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
 
 CHUNK = 1600
