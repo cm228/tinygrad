@@ -307,8 +307,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       if length_penalty is None: penalty = length
       else: penalty = ((5 + length) / 6) ** length_penalty
       result.append(logprob / penalty)
-    print(result)
     best_idx = int(np.argmax(result))
+    print("avg_logprob: ", result[best_idx])
     return best_idx
   
   def get_ctx_lens(ctx, i):
@@ -334,7 +334,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       ctx_lens = get_ctx_lens(ctx, i)
       idx = rank(ctx_lens, sum_logprobs)
       model.decoder.rearrange_kv_cache([idx]*model.batch_size, ctx_lens[idx])
-      [print(line+'\n') for line in enc.decode_batch(ctx)]
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
 
@@ -363,7 +362,6 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     return r
   
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
-  print(start_tokens)
   if model.is_multilingual:
     # TODO detect language
     language_token = enc._special_tokens["<|startoftranscript|>"] + 1 + tuple(LANGUAGES.keys()).index("en")
