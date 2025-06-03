@@ -145,10 +145,13 @@ N_MELS = 80
 FRAMES_PER_SEGMENT = SAMPLES_PER_SEGMENT // HOP_LENGTH # 3000
 
 def pad_or_trim(arr, target_len):
-  curr_len = len(arr)
-  if curr_len == target_len: return arr
-  elif curr_len < target_len: return np.pad(arr, (0, target_len - curr_len), 'constant')
-  else: return arr[:target_len]
+  diff = target_len - arr.shape[-1]
+  if diff == 0: return arr
+  elif diff > 0:
+    pad = [(0, 0)] * arr.ndim
+    pad[-1] = (0, diff)
+    return np.pad(arr, pad, mode='constant')
+  else: return arr[(..., slice(0, target_len))]
 
 def prep_audio(waveforms: List[np.ndarray], batch_size: int, truncate=False) -> np.ndarray:
   """
