@@ -313,7 +313,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
         # Get the two tokens before the last meaningful token, if available
         prev_tokens = seq[eot_index - 2:eot_index] if eot_index >= 2 else []
         # Check if both are timestamps
-        subtract_extra = all(tok > enc._special_tokens["<|notimestamp|>"] for tok in prev_tokens) if len(prev_tokens) == 2 else False
+        subtract_extra = all(tok > enc._special_tokens["<|notimestamps|>"] for tok in prev_tokens) if len(prev_tokens) == 2 else False
         result.append(i - (len(seq) - eot_index) - subtract_extra)
     return result
  
