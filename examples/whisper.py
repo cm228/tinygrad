@@ -272,10 +272,11 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       elif last > start:
         if penult is not None and (penult==start_tokens[-1] or penult>=start): logits[i, start:] = -np.inf
         else: logits[i, np.r_[:eot, start:last]] = -np.inf # np.r_[:eot, start:last]
-      else:
-        logprobs = log_softmax(logits[i])
-        timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:eot+1])
-        if timestamp_prob>text_toks_prob: logits[i, :start] = -np.inf
+    
+    logprobs = log_softmax(logits, axis=-1)
+    for i, lp in enumerate(logprobs):
+      timestamp_prob, text_toks_prob = logsumexp(lp[start:]), np.max(lp[:eot+1])
+      if timestamp_prob>text_toks_prob: logits[i, :start] = -np.inf
     return logits
   
   def sample(ctx, next_logits, sum_logprobs, use_beam):
