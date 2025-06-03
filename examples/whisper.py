@@ -302,6 +302,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       if length_penalty is None: penalty = length
       else: penalty = ((5 + length) / 6) ** length_penalty
       result.append(logprob / penalty)
+    print(result)
     best_idx = int(np.argmax(result))
     return best_idx
   
