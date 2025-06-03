@@ -324,7 +324,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   def gettexttoks(line):
     notime = enc._special_tokens["<|notimestamps|>"]
     line = [tok for tok in line if tok < eot or tok > notime][-nsample+len(start_tokens):]
-    if len(line)>1 and line[-1]>notime and line[-2]>notime: line = line[:-1]
+    # if len(line)>1 and line[-1]>notime and line[-2]>notime: line = line[:-1]
     return line
   
   def tt2sec(tok): return float(enc.decode([tok])[2:-2])
