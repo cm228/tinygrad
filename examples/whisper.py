@@ -309,7 +309,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       else: penalty = ((5 + length) / 6) ** length_penalty
       result.append(logprob / penalty)
     best_idx = int(np.argmax(result))
-    print("avg_logprob: ", result[best_idx])
+    # print("avg_logprob: ", result[best_idx])
     return best_idx
   
   def get_ctx_lens(ctx, i):
@@ -329,7 +329,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       logits = model.decoder(Tensor(next_tokens), pos, encoded_audio).numpy()
       if pos==0: 
         no_speech_probs = softmax(logits[:, -len(start_tokens)], axis=-1)[:, enc._special_tokens['<|nospeech|>']].tolist()
-        print("no speech probs: ", no_speech_probs[0])
+        # print("no speech probs: ", no_speech_probs[0])
       next_logits = apply_logit_rules(ctx, logits[:,-1])
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
