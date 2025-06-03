@@ -321,11 +321,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
 
-  def gettexttoks(line):
-    notime = enc._special_tokens["<|notimestamps|>"]
-    line = [tok for tok in line if tok < eot or tok > notime][-nsample+len(start_tokens):]
-    # if len(line)>1 and line[-1]>notime and line[-2]>notime: line = line[:-1]
-    return line
+  def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
   
   def tt2sec(tok): return float(enc.decode([tok])[2:-2])
   
@@ -337,10 +333,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   def process_ctx(toks, seek, end):
     i, r, c = np.where(toks == start_tokens[-1])[0][0] + 1, [], []
     for t in toks[i:]:
-        if t > enc._special_tokens['<|notimestamps|>'] and len(c) > 1:
-            r.append({'text': enc.decode(c[1:]).rstrip(), 'start': seek + tt2sec(c[0]), 'end': seek + tt2sec(t)})
-            c = []
-        else: c.append(t)
+      if t > enc._special_tokens['<|notimestamps|>'] and len(c) > 1: _, c = r.append({'text': enc.decode(c[1:]).rstrip(), 'start': seek + tt2sec(c[0]), 'end': min(end, seek + tt2sec(t))}), []
+      else: c.append(t)
     if len(c)>1:
       text = enc.decode(gettexttoks(c[1:])).rstrip()
       if len(r)==0: r.append({'text': text, 'start': seek, 'end': min(end, seek+30)})
