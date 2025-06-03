@@ -313,7 +313,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     for i in range(nsample-len(start_tokens)):
       logits = model.decoder(Tensor(next_tokens), pos, encoded_audio).numpy()
       if pos==0: 
-        no_speech_probs = softmax(logits[:, -len(start_tokens)], -1)[:, enc._special_tokens['<|nospeech|>']].tolist()
+        no_speech_probs = softmax(logits[:, -len(start_tokens)], axis=-1)[:, enc._special_tokens['<|nospeech|>']].tolist()
         print(no_speech_probs)
       next_logits = apply_logit_rules(ctx, logits[:,-1])
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
