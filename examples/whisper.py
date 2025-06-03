@@ -326,7 +326,9 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     pos, next_tokens, sum_logprobs, no_speech_probs = 0, ctx, [0]*ctx.shape[0], [-np.inf]*ctx.shape[0]
     for i in range(nsample-len(start_tokens)):
       logits = model.decoder(Tensor(next_tokens), pos, encoded_audio).numpy()
-      if pos==0: no_speech_probs = softmax(logits[:, -len(start_tokens)], axis=-1)[:, enc._special_tokens['<|nospeech|>']].tolist()
+      if pos==0: 
+        no_speech_probs = softmax(logits[:, -len(start_tokens)], axis=-1)[:, enc._special_tokens['<|nospeech|>']].tolist()
+        print("no speech probs: ", no_speech_probs[0])
       next_logits = apply_logit_rules(ctx, logits[:,-1])
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
