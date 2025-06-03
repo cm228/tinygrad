@@ -267,8 +267,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       if last == start_tokens[-1]:
         logits[:, enc.encode(' ') + [eot]] = -np.inf
         if use_timestamps:
-          logits[i, :start] = -np.inf
-          logits[i, max_first+1:] = -np.inf
+          logits[i, np.r_[:start, max_first+1:]] = -np.inf
+          # logits[i, max_first+1:] = -np.inf
       elif last > start:
         if penult is not None and (penult==start_tokens[-1] or penult>=start): logits[i, start:] = -np.inf
         else: logits[i, np.r_[:eot, start:last]] = -np.inf # np.r_[:eot, start:last]
