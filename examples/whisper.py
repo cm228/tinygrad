@@ -117,13 +117,14 @@ class TextDecoder:
   def output_tok(self, x):
     return (self.ln(x) @ self.token_embedding.weight.T).realize()
   
-  def rearrange_kv_cache(self, beam_indices: List[int]):
+  def rearrange_kv_cache(self, beam_indices: List[int], length=None):
     for block in self.blocks:
       if block.attn.kv_caching != 'self': continue
       for cache_attr in ['cache_k', 'cache_v']:
         cache = getattr(block.attn, cache_attr, None)
         if cache is None: continue
         selected = [cache[i] for i in beam_indices]
+        if isinstance(length, int): selected = [s[:, :length] for s in selected]
         selected_tensor = selected[0].stack(*selected[1:], dim=0)
         getattr(block.attn, cache_attr).assign(selected_tensor.contiguous()).realize()
 
@@ -304,7 +305,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     best_idx = int(np.argmax(result))
     return best_idx
   
-  def repeated_eot(ctx, i): return [i-np.argmax(seq[::-1] != eot)-1 for seq in ctx]
+  def get_ctx_lens(ctx, i): return [i-np.argmax(seq[::-1] != eot)-1 for seq in ctx]
  
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
@@ -314,8 +315,9 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
     if use_beam:
-      idx = rank(repeated_eot(ctx, i), sum_logprobs)
-      model.decoder.rearrange_kv_cache([idx]*model.batch_size)
+      ctx_lens = get_ctx_lens(ctx, i)
+      idx = rank(ctx_lens, sum_logprobs)
+      model.decoder.rearrange_kv_cache([idx]*model.batch_size, ctx_lens[idx])
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
 
@@ -345,7 +347,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
             c = []
         else: c.append(t)
     if len(r)==0: 
-      r.append({'text': enc.decode(c[1:]), 'start': seek, 'end': seek + 30})
+      r.append({'text': enc.decode(c[1:]), 'start': seek, 'end': min(end, seek + 30)})
       c = []
     elif len(c)>1 and len(enc.decode(gettexttoks(c[1:])))>0:
       r.append({'text': enc.decode(gettexttoks(c[1:])), 'start': seek + tt2sec(c[0]), 'end': min(end, seek + tt2sec(c[0])+30)})
@@ -365,8 +367,8 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   transcriptions = [[] for _ in waveforms]
   segments = [[] for _ in waveforms]
 
-  curr_frame = 0
-  while curr_frame*HOP_LENGTH < max(map(len, waveforms)):
+  curr_frame, max_steps = 0, max(map(len, waveforms)) - 1.0*RATE
+  while curr_frame*HOP_LENGTH <= max_steps:
     encoded_audio = model.encoder.encode(get_padded_segment(log_spec, curr_frame, FRAMES_PER_SEGMENT))
 
     if all(len(c) == len(ctx[0]) for c in ctx): ctx = inferloop(np.array(ctx), encoded_audio)
