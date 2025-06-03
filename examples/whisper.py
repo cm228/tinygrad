@@ -264,13 +264,18 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     start, max_first = enc._special_tokens['<|0.00|>'], enc._special_tokens['<|1.00|>']
     for i, row in enumerate(ctx):
       last, penult = row[-1], (row[-2] if row[-1]!=start_tokens[-1] else None)
-      if last == start_tokens[-1]: logits[i, (list(range(start)) if use_timestamps else enc.encode(' ') + [eot])] = -np.inf
+      if last == start_tokens[-1]:
+        logits[:, enc.encode(' ') + [eot]] = -np.inf
+        if use_timestamps:
+          logits[i, :start] = -np.inf
+          logits[i, max_first+1:] = -np.inf
       elif last > start:
         if penult is not None and (penult==start_tokens[-1] or penult>=start): logits[i, start:] = -np.inf
         else: logits[i, np.r_[:eot, start:last]] = -np.inf # np.r_[:eot, start:last]
-      logprobs = log_softmax(logits[i])
-      timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:eot+1])
-      if timestamp_prob>text_toks_prob: logits[i, :start] = -np.inf
+      else:
+        logprobs = log_softmax(logits[i])
+        timestamp_prob, text_toks_prob = logsumexp(logprobs[start:]), np.max(logprobs[:eot+1])
+        if timestamp_prob>text_toks_prob: logits[i, :start] = -np.inf
     return logits
   
   def sample(ctx, next_logits, sum_logprobs, use_beam):
