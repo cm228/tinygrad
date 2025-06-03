@@ -305,7 +305,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     best_idx = int(np.argmax(result))
     return best_idx
   
-  def get_ctx_lens(ctx, i): return [i-np.argmax(seq[::-1] != eot)+1 for seq in ctx]
+  def get_ctx_lens(ctx, i): return [i-np.argmax(seq[::-1] != eot) for seq in ctx]
  
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens, sum_logprobs = 0, ctx, [0]*ctx.shape[0]
