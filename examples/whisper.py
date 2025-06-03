@@ -306,7 +306,16 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     best_idx = int(np.argmax(result))
     return best_idx
   
-  def get_ctx_lens(ctx, i): return [i-np.argmax(seq[::-1] != eot) for seq in ctx]
+  def get_ctx_lens(ctx, i):
+    result = []
+    for seq in ctx:
+        eot_index = len(seq) - np.argmax(seq[::-1] != eot)  # index of last meaningful token
+        # Get the two tokens before the last meaningful token, if available
+        prev_tokens = seq[eot_index - 2:eot_index] if eot_index >= 2 else []
+        # Check if both are timestamps
+        subtract_extra = all(tok > enc._special_tokens["<|notimestamp|>"] for tok in prev_tokens) if len(prev_tokens) == 2 else False
+        result.append(i - (len(seq) - eot_index) - subtract_extra)
+    return result
  
   def inferloop(ctx: Union[np.ndarray, List[np.ndarray]], encoded_audio):
     pos, next_tokens, sum_logprobs, no_speech_probs = 0, ctx, [0]*ctx.shape[0], [-np.inf]*ctx.shape[0]
@@ -324,7 +333,11 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
     return ctx
 
-  def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
+  def gettexttoks(line):
+    notimestamps = enc._special_tokens["<|notimestamps|>"]
+    line = [tok for tok in line if tok < eot or tok > notimestamps][-nsample+len(start_tokens):]
+    if len(line)>1 and line[-1]>notimestamps and line[-2]>notimestamps: line = line[:-1]
+    return line
   
   def tt2sec(tok): return float(enc.decode([tok])[2:-2])
   
