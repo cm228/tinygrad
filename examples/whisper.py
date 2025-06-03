@@ -347,6 +347,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     return r
   
   start_tokens = [enc._special_tokens["<|startoftranscript|>"]]
+  print(start_tokens)
   if model.is_multilingual:
     # TODO detect language
     language_token = enc._special_tokens["<|startoftranscript|>"] + 1 + tuple(LANGUAGES.keys()).index("en")
