@@ -321,6 +321,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       idx = rank(ctx_lens, sum_logprobs)
       model.decoder.rearrange_kv_cache([idx]*model.batch_size, ctx_lens[idx])
       ctx = np.tile(ctx[idx], (model.batch_size, 1))
+      print(enc.decode_batch(ctx))
     return ctx
 
   def gettexttoks(line): return [tok for tok in line if tok < eot or tok > enc._special_tokens["<|notimestamps|>"]][-nsample+len(start_tokens):]
