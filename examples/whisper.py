@@ -261,10 +261,10 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   def apply_logit_rules(ctx, logits):
     supr = [enc._special_tokens[c] for c in ["<|startoftranscript|>", "<|translate|>", "<|transcribe|>","<|startoflm|>","<|startofprev|>","<|nospeech|>","<|notimestamps|>",]]
     logits[:, supr] = -np.inf
-    start = enc._special_tokens['<|0.00|>']
+    start, max_first = enc._special_tokens['<|0.00|>'], enc._special_tokens['<|1.00|>']
     for i, row in enumerate(ctx):
       last, penult = row[-1], (row[-2] if row[-1]!=start_tokens[-1] else None)
-      if last == start_tokens[-1]: logits[i, (np.r_[:start, start+51:] if use_timestamps else enc.encode(' ') + [eot])] = -np.inf
+      if last == start_tokens[-1]: logits[i, (np.r_[:start, max_first:] if use_timestamps else enc.encode(' ') + [eot])] = -np.inf
       elif last > start:
         if penult is not None and (penult==start_tokens[-1] or penult>=start): logits[i, start:] = -np.inf
         else: logits[i, np.r_[:eot, start:last]] = -np.inf # np.r_[:eot, start:last]
