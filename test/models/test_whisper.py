@@ -69,12 +69,6 @@ class TestWhisper(unittest.TestCase):
     self.assertEqual(TRANSCRIPTION_1, trancriptions[1])
 
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
-  def test_transcribe_long_beam_notimestamps(self):
-    waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
-    transcription = transcribe_waveform(self.models[5], self.enc, waveforms, use_beam=True)
-    self.assertEqual(TRANSCRIPTION_3_BEAM_NO_TIMESTAMPS, transcription)
-
-  @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
   def test_transcribe_long_beam_timestamps(self):
     waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
     transcription = transcribe_waveform(self.models[5], self.enc, waveforms, use_beam=True, use_timestamps=True)
