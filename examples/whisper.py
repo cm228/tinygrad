@@ -339,6 +339,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
     if use_beam:
+      enc.decode_batch(ctx)
       ctx_lens = get_ctx_lens(ctx, i)
       idx = rank(ctx_lens, sum_logprobs)
       model.decoder.rearrange_kv_cache([idx]*model.batch_size, ctx_lens[idx])
