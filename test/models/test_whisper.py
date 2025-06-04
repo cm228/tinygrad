@@ -15,13 +15,15 @@ TRANSCRIPTION_2 = "a slightly longer audio file so that we can test batch transc
 # TODO this file will possibly not survive long. find another 1-2 minute sound file online to transcribe
 TEST_FILE_3_URL = 'https://homepage.ntu.edu.tw/~karchung/miniconversations/mc45.mp3'
 TRANSCRIPTION_3 = "Just lie back and relax. Is the level of pressure about right? Yes, it's fine, and I'd like conditioner please. Sure. I'm going to start the second lathering now. Would you like some Q-tips? How'd you like it cut? I'd like my bangs and the back trimmed, and I'd like the rest thinned out a bit and layered. Where would you like the part? On the left, right about here. Here, have a look. What do you think? It's fine. Here's a thousand anti-dollars. It's 30-ant extra for the rants. Here's your change and receipt. Thank you, and please come again. So how do you like it? It could have been worse, but you'll notice that I didn't ask her for her card. Hmm, yeah. Maybe you can try that place over there next time."   # noqa: E501
+TRANSCRIPTION_3_BEAM_NO_TIMESTAMPS = "Just lie back and relax. Is the level of pressure about right? Yes, it's fine, and I'd like conditioner, please. Sure. I'm going to start the second lathering now. Would you like some Q-tips? How'd you like it cut? I'd like my bangs and the back trimmed, and I'd like the rest thinned out a bit and layered. Where would you like the part? On the left, right about here. Here, have a look. What do you think? It's fine. Here's a thousand anti-dollars. It's 30 anti-extra for the rinse. Here's your change and receipt. Thank you, and please come again. So how do you like it? It could have been worse, but you'll notice that I didn't ask her for her card. Hmm, yeah. Maybe you can try that place over there next time."   # noqa: E501
+TRANSCRIPTION_3_BEAM_TIMESTAMPS = "Just lie back and relax. Is the level of pressure about right? Yes, it's fine, and I'd like conditioner, please. Sure. I'm going to start the second lathering now. Would you like some Q-tips? How'd you like it cut? I'd like my bangs in the back trimmed, and I'd like the rest thinned out a bit and layered. Where would you like the part? On the left, right about here. Here, have a look. What do you think? It's fine. Here's a thousand anti-dollars. It's 30-ant extra for the rinse. Here's your change and receipt. Thank you, and please come again. So how do you like it? It could have been worse, but you'll notice that I didn't ask her for her card. Hmm, yeah. Maybe you can try that place over there next time."   # noqa: E501
 
 @unittest.skipIf(CI and Device.DEFAULT in ["CPU"], "slow")
 @unittest.skipUnless(is_dtype_supported(dtypes.float16), "need float16 support")
 class TestWhisper(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
-    model, enc = init_whisper("tiny.en", batch_size=2)
+    model, enc = init_whisper("tiny.en", batch_size=5)
     cls.model = model
     cls.enc = enc
     # TODO: whisper has out of bounds access somewhere
@@ -76,6 +78,18 @@ class TestWhisper(unittest.TestCase):
     self.assertEqual(2, len(trancriptions))
     self.assertEqual(TRANSCRIPTION_3, trancriptions[0])
     self.assertEqual(TRANSCRIPTION_1, trancriptions[1])
+
+  @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
+  def test_transcribe_long_beam_notimestamps(self):
+    waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
+    transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True)
+    self.assertEqual(TRANSCRIPTION_3_BEAM_NO_TIMESTAMPS, transcription)
+
+  @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
+  def test_transcribe_long_beam_timestamps(self):
+    waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
+    transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True, use_timestamps=True)
+    self.assertEqual(TRANSCRIPTION_3_BEAM_TIMESTAMPS, transcription)
 
 if __name__ == '__main__':
   unittest.main()
