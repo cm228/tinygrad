@@ -395,7 +395,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   if use_timestamps: transcriptions = [[tok for tok in line if tok<eot] for line in transcriptions]
   transcriptions = list(map(lambda tokens: enc.decode(tokens).strip(), transcriptions))
 
-  if use_timestamps: json.dump({'text': transcriptions[0], 'segments': segments[0]}, open('tinygrad_output.json', 'w'))
+  # if use_timestamps: json.dump({'text': transcriptions[0], 'segments': segments[0]}, open('tinygrad_output.json', 'w'))
   return transcriptions if len(transcriptions) > 1 else transcriptions[0]
 
 CHUNK = 1600
