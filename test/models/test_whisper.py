@@ -23,33 +23,32 @@ TRANSCRIPTION_3_BEAM_TIMESTAMPS = "Just lie back and relax. Is the level of pres
 class TestWhisper(unittest.TestCase):
   @classmethod
   def setUpClass(cls):
-    model, enc = init_whisper("tiny.en", batch_size=5)
-    cls.model = model
-    cls.enc = enc
+    model, cls.enc = init_whisper('tiny.en', 1)
+    cls.models = {bs: init_whisper('tiny.en', bs)[0] for bs in [2, 5]}
+    cls.models[1] = model
 
   @classmethod
   def tearDownClass(cls):
-    del cls.model
-    del cls.enc
+    cls.models.clear()
 
   def test_transcribe_file1(self):
-    self.assertEqual(transcribe_file(self.model, self.enc, TEST_FILE_1),  TRANSCRIPTION_1)
+    self.assertEqual(transcribe_file(self.models[1], self.enc, TEST_FILE_1),  TRANSCRIPTION_1)
 
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too many tests for CI")
   def test_transcribe_file2(self):
-    self.assertEqual(transcribe_file(self.model, self.enc, TEST_FILE_2),  TRANSCRIPTION_2)
+    self.assertEqual(transcribe_file(self.models[1], self.enc, TEST_FILE_2),  TRANSCRIPTION_2)
 
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too many tests for CI")
   def test_transcribe_batch12(self):
     waveforms = [load_file_waveform(TEST_FILE_1), load_file_waveform(TEST_FILE_2)]
-    transcriptions = transcribe_waveform(self.model, self.enc, waveforms)
+    transcriptions = transcribe_waveform(self.models[2], self.enc, waveforms)
     self.assertEqual(2, len(transcriptions))
     self.assertEqual(TRANSCRIPTION_1,  transcriptions[0])
     self.assertEqual(TRANSCRIPTION_2,  transcriptions[1])
 
   def test_transcribe_batch21(self):
     waveforms = [load_file_waveform(TEST_FILE_2), load_file_waveform(TEST_FILE_1)]
-    transcriptions = transcribe_waveform(self.model, self.enc, waveforms)
+    transcriptions = transcribe_waveform(self.models[2], self.enc, waveforms)
     self.assertEqual(2, len(transcriptions))
     self.assertEqual(TRANSCRIPTION_2,  transcriptions[0])
     self.assertEqual(TRANSCRIPTION_1,  transcriptions[1])
@@ -57,14 +56,14 @@ class TestWhisper(unittest.TestCase):
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
   def test_transcribe_long(self):
     waveform = [load_file_waveform(fetch(TEST_FILE_3_URL))]
-    transcription = transcribe_waveform(self.model, self.enc, waveform)
+    transcription = transcribe_waveform(self.models[1], self.enc, waveform)
     self.assertEqual(TRANSCRIPTION_3, transcription)
 
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
   def test_transcribe_long_no_batch(self):
     waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL)), load_file_waveform(TEST_FILE_1)]
 
-    trancriptions = transcribe_waveform(self.model, self.enc, waveforms)
+    trancriptions = transcribe_waveform(self.models[2], self.enc, waveforms)
     self.assertEqual(2, len(trancriptions))
     self.assertEqual(TRANSCRIPTION_3, trancriptions[0])
     self.assertEqual(TRANSCRIPTION_1, trancriptions[1])
@@ -72,13 +71,13 @@ class TestWhisper(unittest.TestCase):
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
   def test_transcribe_long_beam_notimestamps(self):
     waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
-    transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True)
+    transcription = transcribe_waveform(self.models[5], self.enc, waveforms, use_beam=True)
     self.assertEqual(TRANSCRIPTION_3_BEAM_NO_TIMESTAMPS, transcription)
 
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
   def test_transcribe_long_beam_timestamps(self):
     waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
-    transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True, use_timestamps=True)
+    transcription = transcribe_waveform(self.models[5], self.enc, waveforms, use_beam=True, use_timestamps=True)
     self.assertEqual(TRANSCRIPTION_3_BEAM_TIMESTAMPS, transcription)
 
 if __name__ == '__main__':
