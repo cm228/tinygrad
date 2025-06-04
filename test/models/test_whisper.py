@@ -26,24 +26,14 @@ class TestWhisper(unittest.TestCase):
     model, enc = init_whisper("tiny.en", batch_size=5)
     cls.model = model
     cls.enc = enc
-    # TODO: whisper has out of bounds access somewhere
-    # cls.context = Context(IGNORE_OOB=1)
-    # cls.context.__enter__()
 
   @classmethod
   def tearDownClass(cls):
-    # cls.context.__exit__(None, None, None)
     del cls.model
     del cls.enc
 
   def test_transcribe_file1(self):
     self.assertEqual(transcribe_file(self.model, self.enc, TEST_FILE_1),  TRANSCRIPTION_1)
-
-  @unittest.expectedFailure  # Test for out of bounds access
-  # @unittest.skip("TODO: flaky")
-  def test_transcribe_file1_OOB(self):
-    with Context(IGNORE_OOB=0):
-      self.assertEqual(transcribe_file(self.model, self.enc, TEST_FILE_1),  TRANSCRIPTION_1)
 
   @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too many tests for CI")
   def test_transcribe_file2(self):
@@ -79,17 +69,17 @@ class TestWhisper(unittest.TestCase):
     self.assertEqual(TRANSCRIPTION_3, trancriptions[0])
     self.assertEqual(TRANSCRIPTION_1, trancriptions[1])
 
-  # @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
-  # def test_transcribe_long_beam_notimestamps(self):
-  #   waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
-  #   transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True)
-  #   self.assertEqual(TRANSCRIPTION_3_BEAM_NO_TIMESTAMPS, transcription)
+  @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
+  def test_transcribe_long_beam_notimestamps(self):
+    waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
+    transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True)
+    self.assertEqual(TRANSCRIPTION_3_BEAM_NO_TIMESTAMPS, transcription)
 
-  # @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
-  # def test_transcribe_long_beam_timestamps(self):
-  #   waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
-  #   transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True, use_timestamps=True)
-  #   self.assertEqual(TRANSCRIPTION_3_BEAM_TIMESTAMPS, transcription)
+  @unittest.skipIf(CI or Device.DEFAULT == "LLVM", "too long for CI")
+  def test_transcribe_long_beam_timestamps(self):
+    waveforms = [load_file_waveform(fetch(TEST_FILE_3_URL))]
+    transcription = transcribe_waveform(self.model, self.enc, waveforms, use_beam=True, use_timestamps=True)
+    self.assertEqual(TRANSCRIPTION_3_BEAM_TIMESTAMPS, transcription)
 
 if __name__ == '__main__':
   unittest.main()
