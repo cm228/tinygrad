@@ -283,22 +283,16 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     logprobs = log_softmax(next_logits, axis=-1)
     last_eot = (ctx[:, -1] == eot)
     if use_beam:
-      # bs, vs = model.batch_size, next_logits.shape[-1]
-      # if ctx[0, -1] == start_tokens[-1]: logprobs = logprobs[0, :].flatten()
-      # else
-      #   mask = np.full_like(logprobs, -np.inf)
-      #   mask[:, eot] = 0
-      #   logprobs = (np.where((ctx[:, -1] == eot)[:, None], mask, logprobs) + sum_logprobs.reshape(-1, 1)).flatten()
-      # top_idxs = np.argpartition(logprobs, -bs)[-bs:]
-      # top_idxs = top_idxs[np.argsort(-logprobs[top_idxs])]
-      # beam_idxs = top_idxs // vs
-      # tokens = (top_idxs % vs).reshape(-1, 1)
-      # sum_logprobs, ctx = logprobs[top_idxs], ctx[beam_idxs]
-      # model.decoder.rearrange_kv_cache(beam_idxs.tolist())
       bs, vs = model.batch_size, next_logits.shape[-1]
-      logprobs = (logprobs[0, :] if ctx[0, -1] == start_tokens[-1] else (np.where(last_eot[:, None], np.full_like(logprobs, -np.inf), logprobs) + sum_logprobs.reshape(-1, 1))).flatten()
-      top_idxs = np.argsort(-logprobs)[:bs]
-      beam_idxs, tokens = top_idxs // vs, (top_idxs % vs).reshape(-1, 1)
+      if ctx[0, -1] == start_tokens[-1]: logprobs = logprobs[0, :].flatten()
+      else:
+        mask = np.full_like(logprobs, -np.inf)
+        mask[:, eot] = 0
+        logprobs = (np.where((ctx[:, -1] == eot)[:, None], mask, logprobs) + sum_logprobs.reshape(-1, 1)).flatten()
+      top_idxs = np.argpartition(logprobs, -bs)[-bs:]
+      top_idxs = top_idxs[np.argsort(-logprobs[top_idxs])]
+      beam_idxs = top_idxs // vs
+      tokens = (top_idxs % vs).reshape(-1, 1)
       sum_logprobs, ctx = logprobs[top_idxs], ctx[beam_idxs]
       model.decoder.rearrange_kv_cache(beam_idxs.tolist())
     else:
