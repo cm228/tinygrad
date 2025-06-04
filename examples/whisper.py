@@ -255,7 +255,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   Returns the transcribed text if a single waveform is provided, or an array of transcriptions if multiple are provided
   """
 
-  log_spec = prep_audio(waveforms, 1 if use_beam else len(waveforms), truncate)
+  log_spec = prep_audio(waveforms, 1 if use_beam else model.batch_size, truncate)
   nsample = model.decoder.max_tokens_to_sample
 
   def apply_logit_rules(ctx, logits):
