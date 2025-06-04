@@ -282,16 +282,22 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
   def sample(ctx, next_logits, sum_logprobs, use_beam):
     logprobs = log_softmax(next_logits, axis=-1)
     if use_beam:
+      # bs, vs = model.batch_size, next_logits.shape[-1]
+      # if ctx[0, -1] == start_tokens[-1]: logprobs = logprobs[0, :].flatten()
+      # else:
+      #   mask = np.full_like(logprobs, -np.inf)
+      #   mask[:, eot] = 0
+      #   logprobs = (np.where((ctx[:, -1] == eot)[:, None], mask, logprobs) + sum_logprobs.reshape(-1, 1)).flatten()
+      # top_idxs = np.argpartition(logprobs, -bs)[-bs:]
+      # top_idxs = top_idxs[np.argsort(-logprobs[top_idxs])]
+      # beam_idxs = top_idxs // vs
+      # tokens = (top_idxs % vs).reshape(-1, 1)
+      # sum_logprobs, ctx = logprobs[top_idxs], ctx[beam_idxs]
+      # model.decoder.rearrange_kv_cache(beam_idxs.tolist())
       bs, vs = model.batch_size, next_logits.shape[-1]
-      if ctx[0, -1] == start_tokens[-1]: logprobs = logprobs[0, :].flatten()
-      else:
-        mask = np.full_like(logprobs, -np.inf)
-        mask[:, eot] = 0
-        logprobs = (np.where((ctx[:, -1] == eot)[:, None], mask, logprobs) + sum_logprobs.reshape(-1, 1)).flatten()
-      top_idxs = np.argpartition(logprobs, -bs)[-bs:]
-      top_idxs = top_idxs[np.argsort(-logprobs[top_idxs])]
-      beam_idxs = top_idxs // vs
-      tokens = (top_idxs % vs).reshape(-1, 1)
+      logprobs = (logprobs[0, :] if ctx[0, -1] == start_tokens[-1] else (np.where((ctx[:, -1] == eot)[:, None], np.full_like(logprobs, -np.inf).at[:, eot].set(0), logprobs) + sum_logprobs.reshape(-1, 1))).flatten()
+      top_idxs = np.argsort(-logprobs)[:bs]
+      beam_idxs, tokens = top_idxs // vs, (top_idxs % vs).reshape(-1, 1)
       sum_logprobs, ctx = logprobs[top_idxs], ctx[beam_idxs]
       model.decoder.rearrange_kv_cache(beam_idxs.tolist())
     else:
@@ -327,9 +333,7 @@ def transcribe_waveform(model: Whisper, enc, waveforms, use_beam=False, use_time
     pos, next_tokens, sum_logprobs, no_speech_probs = 0, ctx, [0]*ctx.shape[0], [-np.inf]*ctx.shape[0]
     for i in range(nsample-len(start_tokens)):
       logits = model.decoder(Tensor(next_tokens), pos, encoded_audio).numpy()
-      if pos==0: 
-        no_speech_probs = softmax(logits[:, -len(start_tokens)], axis=-1)[:, enc._special_tokens['<|nospeech|>']].tolist()
-        # print("no speech probs: ", no_speech_probs[0])
+      if pos==0: no_speech_probs = softmax(logits[:, -len(start_tokens)], axis=-1)[:, enc._special_tokens['<|nospeech|>']].tolist()
       next_logits = apply_logit_rules(ctx, logits[:,-1])
       next_tokens, ctx, pos, sum_logprobs = sample(ctx, next_logits, sum_logprobs, use_beam)
       if (next_tokens == eot).all(): break
